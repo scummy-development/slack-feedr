@@ -1,0 +1,13 @@
+{
+  "name": "smtp",
+  "version": "1.0.0",
+  "main": "lib/main.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@moser-inc/eslint-config": "^1.13.0"
+  }
+}
