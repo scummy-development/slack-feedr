@@ -1,38 +1,47 @@
 import EventEmitter from 'events';
 import * as net from 'net';
+import * as config from './config.js';
+
+class SessionState {
+  isExtended = false;
+}
 
 class SmtpSession {
   #connection;
-  #state = {};
-  #isExtendedMode = false;
+  #state = new SessionState();
 
   constructor(connection) {
     this.#connection = connection;
     this.#connection.on('line', this.#handleLine.bind(this));
   }
 
+  /**
+   * @private
+   */
   #resetState() {
-    this.#state = {};
+    this.#state = new SessionState();
+    console.log('Session state reset');
   }
 
   /**
    * @param {string} line
-   * @returns {void}
    * @private
    */
   #handleLine(line) {
-    console.log('Received:', line);
+    const [, command, params] =
+      line.match(/^([^\s\r\n]+)(?: | ([^\r\n]+))?$/) ?? [];
 
-    const { command } =
-      line.match(/^(?<command>[^\s\r\n]+)(?: | (?<params>[^\r\n]+))?$/)
-        ?.groups ?? {};
+    console.log('Handling command: %o, Params: %o', command, params);
 
     switch (command.toUpperCase()) {
-      case 'HELO':
-        this.#handleHelo();
-        break;
       case 'EHLO':
-        this.#handleEhlo();
+        this.#handleEhlo(params);
+        break;
+      case 'HELO':
+        this.#handleHelo(params);
+        break;
+      case 'RSET':
+        this.#handleRset(params);
         break;
       // case 'MAIL':
       //   this.#handleMail(params);
@@ -51,15 +60,59 @@ class SmtpSession {
     }
   }
 
-  #handleHelo() {
-    this.#resetState();
-    this.#connection.write(`250 Hello`);
+  /**
+   * @private
+   */
+  #enabledExtendedMode() {
+    this.#state.isExtended = true;
+    console.log('Extended mode enabled');
   }
 
-  #handleEhlo() {
+  /**
+   * @param {string} params
+   * @private
+   */
+  #createExtendedGreeting(params) {
+    let greeting = config.serverName;
+
+    if (params) {
+      const [clientName] = params.split(' ', 1);
+      if (clientName) {
+        greeting += ` greets ${clientName}`;
+      }
+    }
+
+    return greeting;
+  }
+
+  /**
+   * @param {string} params
+   * @private
+   */
+  #handleEhlo(params) {
     this.#resetState();
-    this.#isExtendedMode = true;
-    this.#connection.write(`250 Hello`);
+    this.#enabledExtendedMode();
+
+    this.#connection.write(
+      `250-${this.#createExtendedGreeting(params)}`,
+      '250 HELP',
+    );
+  }
+
+  /**
+   * @private
+   */
+  #handleHelo() {
+    this.#resetState();
+    this.#connection.write(`250 ${config.serverName.toUpperCase()}`);
+  }
+
+  /**
+   * @private
+   */
+  #handleRset() {
+    this.#resetState();
+    this.#connection.write(`250 OK`);
   }
 }
 
@@ -90,10 +143,10 @@ class SmtpConnection extends EventEmitter {
 
   /**
    *
-   * @param {string} data
+   * @param {string} lines
    */
-  write(data) {
-    this.#socket.write(data + CRLF);
+  write(...lines) {
+    this.#socket.write(lines.join(CRLF) + CRLF);
   }
 
   /**
