@@ -1,7 +1,14 @@
 import EventEmitter from 'events';
 import * as net from 'net';
 import * as config from './config.js';
-import * as codes from './response-codes.js';
+import {
+  CLOSING_CODE,
+  HELP_CODE,
+  NOT_IMPLEMENENTED_CODE,
+  OKAY_CODE,
+  PARAMETER_ERROR_CODE,
+  READY_CODE,
+} from './response-codes.js';
 
 class SessionState {
   isExtended = false;
@@ -54,7 +61,7 @@ class SmtpSession {
     this.#enabledExtendedMode();
 
     await this.#connection.write(
-      codes.OKAY,
+      OKAY_CODE,
       this.#createExtendedGreeting(params),
     );
   }
@@ -68,7 +75,8 @@ class SmtpSession {
     }
 
     this.#resetState();
-    await this.#connection.write(codes.OKAY, config.serverName.toUpperCase());
+
+    await this.#connection.write(OKAY_CODE, config.serverName.toUpperCase());
   }
 
   /**
@@ -76,7 +84,8 @@ class SmtpSession {
    */
   async #handleMail(params) {
     console.log('Mail: %o', params);
-    await this.#connection.write(codes.OKAY, `OK`);
+
+    await this.#connection.write(OKAY_CODE, `OK`);
   }
 
   /**
@@ -102,7 +111,7 @@ class SmtpSession {
     }
 
     this.#resetState();
-    await this.#connection.write(codes.OKAY, `OK`);
+    await this.#connection.write(OKAY_CODE, `OK`);
   }
 
   /**
@@ -113,7 +122,7 @@ class SmtpSession {
       return this.#handleParamError('NOOP', params);
     }
 
-    await this.#connection.write(codes.OKAY, `OK`);
+    await this.#connection.write(OKAY_CODE, `OK`);
   }
 
   /**
@@ -124,7 +133,7 @@ class SmtpSession {
       return this.#handleParamError('QUIT', params);
     }
 
-    await this.#connection.write(codes.CLOSING, `Closing`);
+    await this.#connection.write(CLOSING_CODE, `Closing`);
     await this.#connection.end();
   }
 
@@ -141,7 +150,7 @@ class SmtpSession {
     }
 
     await this.#connection.write(
-      codes.HELP,
+      HELP_CODE,
       `Commands: ${Object.keys(this.#handlers).join(' ')}`,
     );
   }
@@ -153,7 +162,7 @@ class SmtpSession {
   ) {
     console.log('Parameter error: %o, Params: %o', command, params);
 
-    await this.#connection.write(codes.PARAMETER_ERROR, message);
+    await this.#connection.write(PARAMETER_ERROR_CODE, message);
   }
 
   /**
@@ -164,7 +173,7 @@ class SmtpSession {
     console.log('Command not implemented: %o, Params: %o', command, params);
 
     await this.#connection.write(
-      codes.NOT_IMPLEMENENTED,
+      NOT_IMPLEMENENTED_CODE,
       `Command not implemented`,
     );
   }
@@ -221,7 +230,7 @@ class SmtpConnection extends EventEmitter {
     this.#socket.on('data', this.#handleData.bind(this));
     this.#socket.on('end', this.#handleEnd.bind(this));
 
-    this.write(codes.READY, `${config.serverName} Service ready`).catch(
+    this.write(READY_CODE, `${config.serverName} Service ready`).catch(
       (err) => {
         console.error('Failed to write to socket', err);
       },
