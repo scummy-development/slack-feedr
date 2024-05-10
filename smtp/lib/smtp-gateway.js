@@ -212,9 +212,9 @@ const CRLF = '\r\n';
 
 class SmtpConnection extends EventEmitter {
   #socket;
+  #buffer = '';
   #gateway;
   #session;
-  #buffer = '';
 
   /**
    * @param {net.Socket} socket
@@ -239,7 +239,7 @@ class SmtpConnection extends EventEmitter {
 
   /**
    * @param {number|string} code
-   * @param {string[]} lines
+   * @param {...string} lines
    * @returns {Promise<void>}
    */
   write(code, ...lines) {
@@ -324,6 +324,7 @@ export class SmtpGateway {
    */
   #handleConnection(socket) {
     console.log('Connection established', socket.address());
+
     this.#connections.set(socket, new SmtpConnection(socket, this));
   }
 
