@@ -9,7 +9,7 @@ class SessionState {
 
 class SmtpSession {
   #connection;
-  #state = new SessionState();
+  #state;
 
   /**
    * @param {SmtpConnection} connection
@@ -20,19 +20,153 @@ class SmtpSession {
   }
 
   /**
-   * @param {string} command
+   * @param {string} line
+   */
+  async #handleLine(line) {
+    const [, command, params] =
+      line.match(/^([^\s\r\n]+)(?: | ([^\r\n]+))?$/) ?? [];
+
+    console.log('Handling command: %o, Params: %o', command, params);
+
+    const handler = this.#handlers[command] ?? this.#handleNotImplemented;
+
+    await handler.call(this, params);
+  }
+
+  #handlers = {
+    EHLO: this.#handleEhlo,
+    HELO: this.#handleHelo,
+    MAIL: this.#handleMail,
+    RCPT: this.#handleRcpt,
+    DATA: this.#handleData,
+    RSET: this.#handleRset,
+    NOOP: this.#handleNoop,
+    QUIT: this.#handleQuit,
+    VRFY: this.#handleVrfy,
+    HELP: this.#handleHelp,
+  };
+
+  /**
    * @param {string} params
    */
-  #handleNotImplemented(command, params) {
-    console.log('Command not implemented: %o, Params: %o', command, params);
-    this.#connection.write(
-      `${codes.NOT_IMPLEMENENTED} Command not implemented`,
+  async #handleEhlo(params) {
+    this.#resetState();
+    this.#enabledExtendedMode();
+
+    await this.#connection.write(
+      codes.OKAY,
+      this.#createExtendedGreeting(params),
     );
   }
 
-  #enabledExtendedMode() {
-    this.#state.isExtended = true;
-    console.log('Extended mode enabled');
+  /**
+   * @param {string} params
+   */
+  async #handleHelo(params) {
+    if (params) {
+      return this.#handleParamError('HELO', params);
+    }
+
+    this.#resetState();
+    await this.#connection.write(codes.OKAY, config.serverName.toUpperCase());
+  }
+
+  /**
+   * @param {string} params
+   */
+  async #handleMail(params) {
+    console.log('Mail: %o', params);
+    await this.#connection.write(codes.OKAY, `OK`);
+  }
+
+  /**
+   * @param {string} params
+   */
+  #handleRcpt(params) {
+    return this.#handleNotImplemented('RCPT', params);
+  }
+
+  /**
+   * @param {string} params
+   */
+  #handleData(params) {
+    return this.#handleNotImplemented('DATA', params);
+  }
+
+  /**
+   * @param {string} params
+   */
+  async #handleRset(params) {
+    if (params) {
+      return this.#handleParamError('RSET', params);
+    }
+
+    this.#resetState();
+    await this.#connection.write(codes.OKAY, `OK`);
+  }
+
+  /**
+   * @param {string} params
+   */
+  async #handleNoop(params) {
+    if (params) {
+      return this.#handleParamError('NOOP', params);
+    }
+
+    await this.#connection.write(codes.OKAY, `OK`);
+  }
+
+  /**
+   * @param {string} params
+   */
+  async #handleQuit(params) {
+    if (params) {
+      return this.#handleParamError('QUIT', params);
+    }
+
+    await this.#connection.write(codes.CLOSING, `Closing`);
+    await this.#connection.end();
+  }
+
+  /**
+   * @param {string} params
+   */
+  #handleVrfy(params) {
+    return this.#handleNotImplemented('VRFY', params);
+  }
+
+  async #handleHelp(params) {
+    if (params) {
+      return this.#handleParamError('HELP', params);
+    }
+
+    await this.#connection.write(
+      codes.HELP,
+      `Commands: ${Object.keys(this.#handlers).join(' ')}`,
+    );
+  }
+
+  async #handleParamError(
+    command,
+    params,
+    message = `Invalid parameter for ${command}`,
+  ) {
+    console.log('Parameter error: %o, Params: %o', command, params);
+
+    await this.#connection.write(codes.PARAMETER_ERROR, message);
+  }
+
+  /**
+   * @param {string} command
+   * @param {string} params
+   */
+  async #handleNotImplemented(command, params) {
+    console.log('Command not implemented: %o, Params: %o', command, params);
+
+    await this.#connection.write(
+      codes.NOT_IMPLEMENENTED,
+      `Command not implemented`,
+    );
   }
 
   /**
@@ -43,6 +177,7 @@ class SmtpSession {
 
     if (params) {
       const [clientName] = params.split(' ', 1);
+
       if (clientName) {
         greeting += ` greets ${clientName}`;
       }
@@ -53,67 +188,14 @@ class SmtpSession {
 
   #resetState() {
     this.#state = new SessionState();
+
     console.log('Session state reset');
   }
 
-  /**
-   * @param {string} params
-   */
-  #handleEhlo(params) {
-    this.#resetState();
-    this.#enabledExtendedMode();
+  #enabledExtendedMode() {
+    this.#state.isExtended = true;
 
-    this.#connection.write(
-      codes.OKAY,
-      this.#createExtendedGreeting(params),
-      'HELP',
-    );
-  }
-
-  #handleHelo() {
-    this.#resetState();
-    this.#connection.write(codes.OKAY, config.serverName.toUpperCase());
-  }
-
-  #handleRset() {
-    this.#resetState();
-    this.#connection.write(codes.OKAY, `OK`);
-  }
-
-  /**
-   * @param {string} line
-   */
-  #handleLine(line) {
-    const [, command, params] =
-      line.match(/^([^\s\r\n]+)(?: | ([^\r\n]+))?$/) ?? [];
-
-    console.log('Handling command: %o, Params: %o', command, params);
-
-    switch (command.toUpperCase()) {
-      case 'EHLO':
-        this.#handleEhlo(params);
-        break;
-      case 'HELO':
-        this.#handleHelo(params);
-        break;
-      case 'RSET':
-        this.#handleRset(params);
-        break;
-      // case 'MAIL':
-      //   this.#handleMail(params);
-      //   break;
-      // case 'RCPT':
-      //   this.#handleRcpt(params);
-      //   break;
-      // case 'DATA':
-      //   this.#handleData(params);
-      //   break;
-      // case 'QUIT':
-      //   this.#handleQuit(params);
-      //   break;
-      default:
-        this.#handleNotImplemented();
-    }
+    console.log('Extended mode enabled');
   }
 }
 
@@ -139,12 +221,17 @@ class SmtpConnection extends EventEmitter {
     this.#socket.on('data', this.#handleData.bind(this));
     this.#socket.on('end', this.#handleEnd.bind(this));
 
-    this.write(codes.READY, `${config.serverName} Service ready`);
+    this.write(codes.READY, `${config.serverName} Service ready`).catch(
+      (err) => {
+        console.error('Failed to write to socket', err);
+      },
+    );
   }
 
   /**
    * @param {number|string} code
    * @param {string[]} lines
+   * @returns {Promise<void>}
    */
   write(code, ...lines) {
     const codedLines = lines.map(
@@ -155,7 +242,26 @@ class SmtpConnection extends EventEmitter {
       codedLines.push(code);
     }
 
-    this.#socket.write(codedLines.join(CRLF) + CRLF);
+    return new Promise((resolve, reject) => {
+      this.#socket.write(codedLines.join(CRLF) + CRLF, (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
+  /**
+   * @returns {Promise<void>}
+   */
+  end() {
+    return new Promise((resolve) => {
+      this.#socket.end(() => {
+        resolve();
+      });
+    });
   }
 
   #clearBuffer() {
