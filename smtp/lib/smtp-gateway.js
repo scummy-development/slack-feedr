@@ -30,42 +30,6 @@ class SmtpSession {
     );
   }
 
-  /**
-   * @param {string} line
-   */
-  #handleLine(line) {
-    const [, command, params] =
-      line.match(/^([^\s\r\n]+)(?: | ([^\r\n]+))?$/) ?? [];
-
-    console.log('Handling command: %o, Params: %o', command, params);
-
-    switch (command.toUpperCase()) {
-      case 'EHLO':
-        this.#handleEhlo(params);
-        break;
-      case 'HELO':
-        this.#handleHelo(params);
-        break;
-      case 'RSET':
-        this.#handleRset(params);
-        break;
-      // case 'MAIL':
-      //   this.#handleMail(params);
-      //   break;
-      // case 'RCPT':
-      //   this.#handleRcpt(params);
-      //   break;
-      // case 'DATA':
-      //   this.#handleData(params);
-      //   break;
-      // case 'QUIT':
-      //   this.#handleQuit(params);
-      //   break;
-      default:
-        this.#handleNotImplemented();
-    }
-  }
-
   #enabledExtendedMode() {
     this.#state.isExtended = true;
     console.log('Extended mode enabled');
@@ -114,6 +78,42 @@ class SmtpSession {
   #handleRset() {
     this.#resetState();
     this.#connection.write(codes.OKAY, `OK`);
+  }
+
+  /**
+   * @param {string} line
+   */
+  #handleLine(line) {
+    const [, command, params] =
+      line.match(/^([^\s\r\n]+)(?: | ([^\r\n]+))?$/) ?? [];
+
+    console.log('Handling command: %o, Params: %o', command, params);
+
+    switch (command.toUpperCase()) {
+      case 'EHLO':
+        this.#handleEhlo(params);
+        break;
+      case 'HELO':
+        this.#handleHelo(params);
+        break;
+      case 'RSET':
+        this.#handleRset(params);
+        break;
+      // case 'MAIL':
+      //   this.#handleMail(params);
+      //   break;
+      // case 'RCPT':
+      //   this.#handleRcpt(params);
+      //   break;
+      // case 'DATA':
+      //   this.#handleData(params);
+      //   break;
+      // case 'QUIT':
+      //   this.#handleQuit(params);
+      //   break;
+      default:
+        this.#handleNotImplemented();
+    }
   }
 }
 
