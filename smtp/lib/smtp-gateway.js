@@ -19,6 +19,10 @@ class SmtpSession {
     this.#connection.on('line', this.#handleLine.bind(this));
   }
 
+  /**
+   * @param {string} command
+   * @param {string} params
+   */
   #handleNotImplemented(command, params) {
     console.log('Command not implemented: %o, Params: %o', command, params);
     this.#connection.write(
@@ -139,6 +143,7 @@ class SmtpConnection extends EventEmitter {
   }
 
   /**
+   * @param {number|string} code
    * @param {string[]} lines
    */
   write(code, ...lines) {
