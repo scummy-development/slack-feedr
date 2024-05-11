@@ -37,12 +37,12 @@ class SmtpSession {
     console.log('Handling command: %o, Params: %o', command, params);
 
     const handler =
-      this.#handlers[command.toUpperCase()] ?? this.#handleNotImplemented;
+      this.#commands[command.toUpperCase()] ?? this.#handleNotImplemented;
 
     await handler.call(this, params);
   }
 
-  #handlers = {
+  #commands = {
     EHLO: this.#handleEhlo,
     HELO: this.#handleHelo,
     MAIL: this.#handleMail,
@@ -160,7 +160,7 @@ class SmtpSession {
 
     await this.#connection.write(
       HELP_CODE,
-      `Commands: ${Object.keys(this.#handlers).join(' ')}`,
+      `Commands: ${Object.keys(this.#commands).join(' ')}`,
       'another line',
     );
   }
