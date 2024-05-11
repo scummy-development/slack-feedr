@@ -19,6 +19,19 @@ class SmtpSession {
   #connection;
   #state;
 
+  #commands = {
+    EHLO: this.#handleEhlo,
+    HELO: this.#handleHelo,
+    MAIL: this.#handleMail,
+    RCPT: this.#handleRcpt,
+    DATA: this.#handleData,
+    RSET: this.#handleRset,
+    NOOP: this.#handleNoop,
+    QUIT: this.#handleQuit,
+    VRFY: this.#handleVrfy,
+    HELP: this.#handleHelp,
+  };
+
   /**
    * @param {SmtpConnection} connection
    **/
@@ -41,19 +54,6 @@ class SmtpSession {
 
     await handler.call(this, params);
   }
-
-  #commands = {
-    EHLO: this.#handleEhlo,
-    HELO: this.#handleHelo,
-    MAIL: this.#handleMail,
-    RCPT: this.#handleRcpt,
-    DATA: this.#handleData,
-    RSET: this.#handleRset,
-    NOOP: this.#handleNoop,
-    QUIT: this.#handleQuit,
-    VRFY: this.#handleVrfy,
-    HELP: this.#handleHelp,
-  };
 
   /**
    * @param {string} params
