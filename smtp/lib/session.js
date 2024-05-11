@@ -1,22 +1,5 @@
 import * as config from './config.js';
-import {
-  CMD_DATA,
-  CMD_EHLO,
-  CMD_HELO,
-  CMD_HELP,
-  CMD_MAIL,
-  CMD_NOOP,
-  CMD_QUIT,
-  CMD_RCPT,
-  CMD_RSET,
-  CMD_VRFY,
-  CODE_BAD_SEQUENCE,
-  CODE_CLOSING,
-  CODE_HELP,
-  CODE_NOT_IMPLEMENTED,
-  CODE_OKAY,
-  CODE_PARAM_ERR,
-} from './constants.js';
+import { ResponseCode, SmtpCommand } from './constants.js';
 
 class SessionState {
   isExtended = false;
@@ -27,16 +10,16 @@ export class SmtpSession {
   #state;
 
   #commands = {
-    [CMD_EHLO]: this.#handleEhlo,
-    [CMD_HELO]: this.#handleHelo,
-    [CMD_MAIL]: this.#handleMail,
-    [CMD_RCPT]: this.#handleRcpt,
-    [CMD_DATA]: this.#handleData,
-    [CMD_RSET]: this.#handleRset,
-    [CMD_NOOP]: this.#handleNoop,
-    [CMD_QUIT]: this.#handleQuit,
-    [CMD_VRFY]: this.#handleVrfy,
-    [CMD_HELP]: this.#handleHelp,
+    [SmtpCommand.EHLO]: this.#handleEhlo,
+    [SmtpCommand.HELO]: this.#handleHelo,
+    [SmtpCommand.MAIL]: this.#handleMail,
+    [SmtpCommand.RCPT]: this.#handleRcpt,
+    [SmtpCommand.DATA]: this.#handleData,
+    [SmtpCommand.RSET]: this.#handleRset,
+    [SmtpCommand.NOOP]: this.#handleNoop,
+    [SmtpCommand.QUIT]: this.#handleQuit,
+    [SmtpCommand.VRFY]: this.#handleVrfy,
+    [SmtpCommand.HELP]: this.#handleHelp,
   };
 
   /**
@@ -70,7 +53,7 @@ export class SmtpSession {
     this.#enabledExtendedMode();
 
     await this.#connection.write(
-      CODE_OKAY,
+      ResponseCode.OKAY,
       this.#createExtendedGreeting(params),
     );
   }
@@ -80,12 +63,15 @@ export class SmtpSession {
    */
   async #handleHelo(params) {
     if (params) {
-      return this.#handleParamError('HELO', params);
+      return this.#handleParamError(SmtpCommand.HELO, params);
     }
 
     this.#loadNewState();
 
-    await this.#connection.write(CODE_OKAY, config.serverName.toUpperCase());
+    await this.#connection.write(
+      ResponseCode.OKAY,
+      config.serverName.toUpperCase(),
+    );
   }
 
   /**
@@ -95,13 +81,13 @@ export class SmtpSession {
     console.log('Mail: %o', params);
     if (!this.#state) {
       await this.#connection.write(
-        CODE_BAD_SEQUENCE,
+        ResponseCode.BAD_SEQUENCE,
         'Bad sequence of commands',
       );
       return;
     }
 
-    await this.#connection.write(CODE_OKAY, `OK`);
+    await this.#connection.write(ResponseCode.OKAY, `OK`);
   }
 
   /**
@@ -127,7 +113,7 @@ export class SmtpSession {
     }
 
     this.#loadNewState();
-    await this.#connection.write(CODE_OKAY, `OK`);
+    await this.#connection.write(ResponseCode.OKAY, `OK`);
   }
 
   /**
@@ -138,7 +124,7 @@ export class SmtpSession {
       return this.#handleParamError('NOOP', params);
     }
 
-    await this.#connection.write(CODE_OKAY, `OK`);
+    await this.#connection.write(ResponseCode.OKAY, `OK`);
   }
 
   /**
@@ -149,7 +135,7 @@ export class SmtpSession {
       return this.#handleParamError('QUIT', params);
     }
 
-    await this.#connection.write(CODE_CLOSING, `Closing`);
+    await this.#connection.write(ResponseCode.CLOSING, `Closing`);
     await this.#connection.end();
   }
 
@@ -166,7 +152,7 @@ export class SmtpSession {
     }
 
     await this.#connection.write(
-      CODE_HELP,
+      ResponseCode.HELP,
       `Commands: ${Object.keys(this.#commands).join(' ')}`,
       'another line',
     );
@@ -179,7 +165,7 @@ export class SmtpSession {
   ) {
     console.log('Parameter error: %o, Params: %o', command, params);
 
-    await this.#connection.write(CODE_PARAM_ERR, message);
+    await this.#connection.write(ResponseCode.PARAM_ERR, message);
   }
 
   /**
@@ -190,7 +176,7 @@ export class SmtpSession {
     console.log('Command not implemented: %o, Params: %o', command, params);
 
     await this.#connection.write(
-      CODE_NOT_IMPLEMENTED,
+      ResponseCode.NOT_IMPLEMENTED,
       `Command not implemented`,
     );
   }
