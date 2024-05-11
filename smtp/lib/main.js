@@ -1,4 +1,4 @@
-import { SmtpGateway } from './smtp-gateway.js';
+import { SmtpGateway } from './gateway.js';
 
 const server = new SmtpGateway();
 
