@@ -5,3 +5,4 @@ export const OKAY_CODE = 250;
 export const UNRECOGNIZED_CODE = 500;
 export const PARAMETER_ERROR_CODE = 501;
 export const NOT_IMPLEMENENTED_CODE = 502;
+export const BAD_SEQUENCE_CODE = 503;

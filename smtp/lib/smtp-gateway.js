@@ -2,6 +2,7 @@ import EventEmitter from 'events';
 import * as net from 'net';
 import * as config from './config.js';
 import {
+  BAD_SEQUENCE_CODE,
   CLOSING_CODE,
   HELP_CODE,
   NOT_IMPLEMENENTED_CODE,
@@ -35,7 +36,8 @@ class SmtpSession {
 
     console.log('Handling command: %o, Params: %o', command, params);
 
-    const handler = this.#handlers[command] ?? this.#handleNotImplemented;
+    const handler =
+      this.#handlers[command.toUpperCase()] ?? this.#handleNotImplemented;
 
     await handler.call(this, params);
   }
@@ -57,7 +59,7 @@ class SmtpSession {
    * @param {string} params
    */
   async #handleEhlo(params) {
-    this.#resetState();
+    this.#loadNewState();
     this.#enabledExtendedMode();
 
     await this.#connection.write(
@@ -74,7 +76,7 @@ class SmtpSession {
       return this.#handleParamError('HELO', params);
     }
 
-    this.#resetState();
+    this.#loadNewState();
 
     await this.#connection.write(OKAY_CODE, config.serverName.toUpperCase());
   }
@@ -84,6 +86,13 @@ class SmtpSession {
    */
   async #handleMail(params) {
     console.log('Mail: %o', params);
+    if (!this.#state) {
+      await this.#connection.write(
+        BAD_SEQUENCE_CODE,
+        'Bad sequence of commands',
+      );
+      return;
+    }
 
     await this.#connection.write(OKAY_CODE, `OK`);
   }
@@ -110,7 +119,7 @@ class SmtpSession {
       return this.#handleParamError('RSET', params);
     }
 
-    this.#resetState();
+    this.#loadNewState();
     await this.#connection.write(OKAY_CODE, `OK`);
   }
 
@@ -152,6 +161,7 @@ class SmtpSession {
     await this.#connection.write(
       HELP_CODE,
       `Commands: ${Object.keys(this.#handlers).join(' ')}`,
+      'another line',
     );
   }
 
@@ -195,10 +205,10 @@ class SmtpSession {
     return greeting;
   }
 
-  #resetState() {
+  #loadNewState() {
     this.#state = new SessionState();
 
-    console.log('Session state reset');
+    console.log('New state created');
   }
 
   #enabledExtendedMode() {
