@@ -1,6 +1,5 @@
 import EventEmitter from 'events';
-import * as config from './config.js';
-import { CODE_READY, CRLF } from './constants.js';
+import { CRLF } from './constants.js';
 import { SmtpSession } from './session.js';
 
 export class SmtpConnection extends EventEmitter {
@@ -23,11 +22,7 @@ export class SmtpConnection extends EventEmitter {
     this.#socket.on('data', this.#handleData.bind(this));
     this.#socket.on('end', this.#handleEnd.bind(this));
 
-    this.write(CODE_READY, `${config.serverName} Service ready`).catch(
-      (err) => {
-        console.error('Failed to write to socket', err);
-      },
-    );
+    this.#session.sendReady();
   }
 
   /**

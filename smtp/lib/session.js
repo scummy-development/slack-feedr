@@ -30,6 +30,13 @@ export class SmtpSession {
     this.#connection.on('line', this.#handleLine.bind(this));
   }
 
+  sendReady() {
+    return this.#connection.write(
+      ResponseCode.READY,
+      `${config.serverName} Service ready`,
+    );
+  }
+
   /**
    * @param {string} line
    */
@@ -78,12 +85,25 @@ export class SmtpSession {
    * @param {string} params
    */
   async #handleMail(params) {
-    console.log('Mail: %o', params);
     if (!this.#state) {
       await this.#connection.write(
         ResponseCode.BAD_SEQUENCE,
         'Bad sequence of commands',
       );
+
+      return;
+    }
+
+    const [, from] = params?.match(/^FROM:<([^>]+)>$/) ?? [];
+
+    console.log('Mail from: %o', from);
+
+    if (!from) {
+      await this.#connection.write(
+        ResponseCode.PARAM_ERR,
+        'Invalid parameter for MAIL',
+      );
+
       return;
     }
 
