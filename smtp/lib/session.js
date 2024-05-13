@@ -1,7 +1,8 @@
 import * as config from './config.js';
 import { DefaultResponse, ResponseCode, SmtpCommand } from './constants.js';
 
-export const MAIL_FROM_MATCHER = /^FROM: ?<([^>]+)>/i;
+export const RE_MAIL_FROM = /^FROM: ?<([^>]+)>/i;
+export const RE_LINE_COMMAND_AND_PARAMS = /^(\w+)(?:\s+(.*))?$/;
 
 class SessionTransaction {
   from;
@@ -45,13 +46,13 @@ export class SmtpSession {
     return this.#writeResponse(ResponseCode.READY);
   }
 
+  /**
+   * @param {ResponseCode[keyof ResponseCode]} code
+   * @param  {...string} messages
+   */
   #writeResponse(code, ...messages) {
-    if (!messages.length) {
-      const defaultMessage = DefaultResponse[code];
-
-      if (defaultMessage) {
-        messages.push(defaultMessage);
-      }
+    if (!messages.length && DefaultResponse[code]) {
+      this.#connection.write(code, DefaultResponse[code]);
     }
 
     return this.#connection.write(code, ...messages);
@@ -61,13 +62,13 @@ export class SmtpSession {
    * @param {string} line
    */
   async #handleLine(line) {
-    const [, command, params] =
-      line.match(/^([^\s\r\n]+)(?: | ([^\r\n]+))?$/) ?? [];
+    const [, commandStr, params] = line.match(RE_LINE_COMMAND_AND_PARAMS) ?? [];
+
+    const command = commandStr.toUpperCase();
 
     console.log('Handling command: %o, Params: %o', command, params);
 
-    const handler =
-      this.#commands[command.toUpperCase()] ?? this.#handleNotImplemented;
+    const handler = this.#commands[command] ?? this.#handleNotImplemented;
 
     await handler.call(this, params);
   }
@@ -79,10 +80,9 @@ export class SmtpSession {
     this.#initialize();
     this.#enabledExtendedMode();
 
-    return this.#writeResponse(
-      ResponseCode.OK,
-      this.#createExtendedGreeting(params),
-    );
+    const extendedGreeting = this.#createExtendedGreeting(params);
+
+    return this.#writeResponse(ResponseCode.OK, extendedGreeting);
   }
 
   /**
@@ -95,29 +95,29 @@ export class SmtpSession {
 
     this.#initialize();
 
-    return this.#writeResponse(
-      ResponseCode.OK,
-      config.serverName.toUpperCase(),
-    );
+    return this.#writeResponse(ResponseCode.OK, config.serverName);
   }
 
   /**
    * @param {string} params
    */
-  #handleMail(params) {
+  async #handleMail(params) {
     if (this.#trx) {
       return this.#writeResponse(ResponseCode.BAD_SEQUENCE);
     }
 
-    this.#startTransaction();
+    const [, from] = params?.match(RE_MAIL_FROM) ?? [];
 
-    const [, from] = params?.match(MAIL_FROM_MATCHER) ?? [];
+    if (!from) {
+      return this.#writeResponse(
+        ResponseCode.PARAM_ERR,
+        'Parameter error - FROM address not found',
+      );
+    }
 
     console.log('Mail from: %o', from);
 
-    if (!from) {
-      return this.#writeResponse(ResponseCode.PARAM_ERR);
-    }
+    await this.#startTransaction(from);
 
     return this.#writeResponse(ResponseCode.OK);
   }
@@ -127,7 +127,7 @@ export class SmtpSession {
    * @todo Implement command
    */
   #handleRcpt(params) {
-    return this.#handleNotImplemented('RCPT', params);
+    return this.#handleNotImplemented(SmtpCommand.RCPT, params);
   }
 
   /**
@@ -135,7 +135,7 @@ export class SmtpSession {
    * @todo Implement command
    */
   #handleData(params) {
-    return this.#handleNotImplemented('DATA', params);
+    return this.#handleNotImplemented(SmtpCommand.DATA, params);
   }
 
   /**
@@ -143,7 +143,7 @@ export class SmtpSession {
    */
   async #handleRset(params) {
     if (params) {
-      return this.#handleParamError('RSET', params);
+      return this.#handleParamError(SmtpCommand.RSET, params);
     }
 
     await this.#abortTransaction();
@@ -156,7 +156,7 @@ export class SmtpSession {
    */
   #handleNoop(params) {
     if (params) {
-      return this.#handleParamError('NOOP', params);
+      return this.#handleParamError(SmtpCommand.NOOP, params);
     }
 
     return this.#writeResponse(ResponseCode.OK);
@@ -167,7 +167,7 @@ export class SmtpSession {
    */
   async #handleQuit(params) {
     if (params) {
-      return this.#handleParamError('QUIT', params);
+      return this.#handleParamError(SmtpCommand.QUIT, params);
     }
 
     await this.#writeResponse(ResponseCode.CLOSING);
@@ -180,15 +180,18 @@ export class SmtpSession {
    * @todo Implement command
    */
   #handleVrfy(params) {
-    return this.#handleNotImplemented('VRFY', params);
+    return this.#handleNotImplemented(SmtpCommand.VRFY, params);
   }
 
-  async #handleHelp(params) {
+  /**
+   * @param {string} params
+   */
+  #handleHelp(params) {
     if (params) {
-      return this.#handleParamError('HELP', params);
+      return this.#handleParamError(SmtpCommand.HELP, params);
     }
 
-    await this.#writeResponse(
+    return this.#writeResponse(
       ResponseCode.HELP,
       `Commands: ${Object.keys(this.#commands).join(' ')}`,
     );
@@ -198,20 +201,25 @@ export class SmtpSession {
    * @param {string} command
    * @param {string} params
    */
-  async #handleNotImplemented(command, params) {
+  #handleNotImplemented(command, params) {
     console.log('Command not implemented: %o, Params: %o', command, params);
 
-    await this.#writeResponse(ResponseCode.NOT_IMPLEMENTED);
+    return this.#writeResponse(ResponseCode.NOT_IMPLEMENTED);
   }
 
-  async #handleParamError(
+  /**
+   * @param {SmtpCommand[keyof SmtpCommand]} command
+   * @param {string} params
+   * @param {string} message
+   */
+  #handleParamError(
     command,
     params,
     message = `Invalid parameter for ${command}`,
   ) {
     console.log('Parameter error: %o, Params: %o', command, params);
 
-    await this.#writeResponse(ResponseCode.PARAM_ERR, message);
+    return this.#writeResponse(ResponseCode.PARAM_ERR, message);
   }
 
   /**
@@ -234,17 +242,13 @@ export class SmtpSession {
   /**
    * @param {string} from
    */
-  async #startTransaction(from) {
+  #startTransaction(from) {
     this.#trx = new SessionTransaction(from);
 
     console.log('Transaction started');
   }
 
   #abortTransaction() {
-    if (this.#trx === null) {
-      return;
-    }
-
     this.#trx = null;
 
     console.log('Transaction aborted');
@@ -257,15 +261,11 @@ export class SmtpSession {
   }
 
   #initialize() {
-    if (this.#isInitialized) {
-      this.#isExtended = false;
+    if (this.#trx !== null) {
       this.#abortTransaction();
-
-      console.log('Session re-initialized');
-
-      return;
     }
 
+    this.#isExtended = false;
     this.#isInitialized = true;
 
     console.log('Session initialized');
