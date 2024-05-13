@@ -1,5 +1,5 @@
 import * as config from './config.js';
-import { ResponseCode, SmtpCommand } from './constants.js';
+import { DefaultResponse, ResponseCode, SmtpCommand } from './constants.js';
 
 export const MAIL_FROM_MATCHER = /^FROM: ?<([^>]+)>/i;
 
@@ -7,7 +7,7 @@ class SessionTransaction {
   from;
 
   /**
-   * @param {*} from
+   * @param {string} from
    */
   constructor(from) {
     this.from = from;
@@ -42,10 +42,19 @@ export class SmtpSession {
   }
 
   sendReady() {
-    return this.#connection.write(
-      ResponseCode.READY,
-      `${config.serverName} Service ready`,
-    );
+    return this.#writeResponse(ResponseCode.READY);
+  }
+
+  #writeResponse(code, ...messages) {
+    if (!messages.length) {
+      const defaultMessage = DefaultResponse[code];
+
+      if (defaultMessage) {
+        messages.push(defaultMessage);
+      }
+    }
+
+    return this.#connection.write(code, ...messages);
   }
 
   /**
@@ -66,12 +75,12 @@ export class SmtpSession {
   /**
    * @param {string} params
    */
-  async #handleEhlo(params) {
+  #handleEhlo(params) {
     this.#initialize();
     this.#enabledExtendedMode();
 
-    await this.#connection.write(
-      ResponseCode.OKAY,
+    return this.#writeResponse(
+      ResponseCode.OK,
       this.#createExtendedGreeting(params),
     );
   }
@@ -79,15 +88,15 @@ export class SmtpSession {
   /**
    * @param {string} params
    */
-  async #handleHelo(params) {
+  #handleHelo(params) {
     if (params) {
       return this.#handleParamError(SmtpCommand.HELO, params);
     }
 
     this.#initialize();
 
-    await this.#connection.write(
-      ResponseCode.OKAY,
+    return this.#writeResponse(
+      ResponseCode.OK,
       config.serverName.toUpperCase(),
     );
   }
@@ -95,34 +104,23 @@ export class SmtpSession {
   /**
    * @param {string} params
    */
-  async #handleMail(params) {
-    if (!this.#trx) {
-      await this.#connection.write(
-        ResponseCode.BAD_SEQUENCE,
-        'Bad sequence of commands',
-      );
-
-      return;
-    }
+  #handleMail(params) {
+    this.#startTransaction();
 
     const [, from] = params?.match(MAIL_FROM_MATCHER) ?? [];
 
     console.log('Mail from: %o', from);
 
     if (!from) {
-      await this.#connection.write(
-        ResponseCode.PARAM_ERR,
-        'Invalid parameter for MAIL',
-      );
-
-      return;
+      return this.#writeResponse(ResponseCode.PARAM_ERR);
     }
 
-    await this.#connection.write(ResponseCode.OKAY, `OK`);
+    return this.#writeResponse(ResponseCode.OK);
   }
 
   /**
    * @param {string} params
+   * @todo Implement command
    */
   #handleRcpt(params) {
     return this.#handleNotImplemented('RCPT', params);
@@ -130,6 +128,7 @@ export class SmtpSession {
 
   /**
    * @param {string} params
+   * @todo Implement command
    */
   #handleData(params) {
     return this.#handleNotImplemented('DATA', params);
@@ -143,19 +142,20 @@ export class SmtpSession {
       return this.#handleParamError('RSET', params);
     }
 
-    this.#startTransaction();
-    await this.#connection.write(ResponseCode.OKAY, `OK`);
+    await this.#abortTransaction();
+
+    return this.#writeResponse(ResponseCode.OK);
   }
 
   /**
    * @param {string} params
    */
-  async #handleNoop(params) {
+  #handleNoop(params) {
     if (params) {
       return this.#handleParamError('NOOP', params);
     }
 
-    await this.#connection.write(ResponseCode.OKAY, `OK`);
+    return this.#writeResponse(ResponseCode.OK);
   }
 
   /**
@@ -166,12 +166,14 @@ export class SmtpSession {
       return this.#handleParamError('QUIT', params);
     }
 
-    await this.#connection.write(ResponseCode.CLOSING, `Closing`);
-    await this.#connection.end();
+    await this.#writeResponse(ResponseCode.CLOSING);
+
+    return this.#connection.end();
   }
 
   /**
    * @param {string} params
+   * @todo Implement command
    */
   #handleVrfy(params) {
     return this.#handleNotImplemented('VRFY', params);
@@ -182,10 +184,9 @@ export class SmtpSession {
       return this.#handleParamError('HELP', params);
     }
 
-    await this.#connection.write(
+    await this.#writeResponse(
       ResponseCode.HELP,
       `Commands: ${Object.keys(this.#commands).join(' ')}`,
-      'another line',
     );
   }
 
@@ -196,10 +197,7 @@ export class SmtpSession {
   async #handleNotImplemented(command, params) {
     console.log('Command not implemented: %o, Params: %o', command, params);
 
-    await this.#connection.write(
-      ResponseCode.NOT_IMPLEMENTED,
-      `Command not implemented`,
-    );
+    await this.#writeResponse(ResponseCode.NOT_IMPLEMENTED);
   }
 
   async #handleParamError(
@@ -209,7 +207,7 @@ export class SmtpSession {
   ) {
     console.log('Parameter error: %o, Params: %o', command, params);
 
-    await this.#connection.write(ResponseCode.PARAM_ERR, message);
+    await this.#writeResponse(ResponseCode.PARAM_ERR, message);
   }
 
   /**
@@ -232,7 +230,13 @@ export class SmtpSession {
   /**
    * @param {string} from
    */
-  #startTransaction(from) {
+  async #startTransaction(from) {
+    if (this.#trx) {
+      await this.#writeResponse(ResponseCode.BAD_SEQUENCE);
+
+      return;
+    }
+
     this.#trx = new SessionTransaction(from);
 
     console.log('Transaction started');
