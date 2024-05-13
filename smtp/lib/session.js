@@ -105,6 +105,10 @@ export class SmtpSession {
    * @param {string} params
    */
   #handleMail(params) {
+    if (this.#trx) {
+      return this.#writeResponse(ResponseCode.BAD_SEQUENCE);
+    }
+
     this.#startTransaction();
 
     const [, from] = params?.match(MAIL_FROM_MATCHER) ?? [];
@@ -231,12 +235,6 @@ export class SmtpSession {
    * @param {string} from
    */
   async #startTransaction(from) {
-    if (this.#trx) {
-      await this.#writeResponse(ResponseCode.BAD_SEQUENCE);
-
-      return;
-    }
-
     this.#trx = new SessionTransaction(from);
 
     console.log('Transaction started');
