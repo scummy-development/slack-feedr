@@ -1,13 +1,24 @@
 import * as config from './config.js';
 import { ResponseCode, SmtpCommand } from './constants.js';
 
-class SessionState {
-  isExtended = false;
+export const MAIL_FROM_MATCHER = /^FROM: ?<([^>]+)>/i;
+
+class SessionTransaction {
+  from;
+
+  /**
+   * @param {*} from
+   */
+  constructor(from) {
+    this.from = from;
+  }
 }
 
 export class SmtpSession {
   #connection;
-  #state;
+  #trx = null;
+  #isInitialized = false;
+  #isExtended = false;
 
   #commands = {
     [SmtpCommand.EHLO]: this.#handleEhlo,
@@ -56,7 +67,7 @@ export class SmtpSession {
    * @param {string} params
    */
   async #handleEhlo(params) {
-    this.#loadNewState();
+    this.#initialize();
     this.#enabledExtendedMode();
 
     await this.#connection.write(
@@ -73,7 +84,7 @@ export class SmtpSession {
       return this.#handleParamError(SmtpCommand.HELO, params);
     }
 
-    this.#loadNewState();
+    this.#initialize();
 
     await this.#connection.write(
       ResponseCode.OKAY,
@@ -85,7 +96,7 @@ export class SmtpSession {
    * @param {string} params
    */
   async #handleMail(params) {
-    if (!this.#state) {
+    if (!this.#trx) {
       await this.#connection.write(
         ResponseCode.BAD_SEQUENCE,
         'Bad sequence of commands',
@@ -94,7 +105,7 @@ export class SmtpSession {
       return;
     }
 
-    const [, from] = params?.match(/^FROM:<([^>]+)>$/) ?? [];
+    const [, from] = params?.match(MAIL_FROM_MATCHER) ?? [];
 
     console.log('Mail from: %o', from);
 
@@ -132,7 +143,7 @@ export class SmtpSession {
       return this.#handleParamError('RSET', params);
     }
 
-    this.#loadNewState();
+    this.#startTransaction();
     await this.#connection.write(ResponseCode.OKAY, `OK`);
   }
 
@@ -178,16 +189,6 @@ export class SmtpSession {
     );
   }
 
-  async #handleParamError(
-    command,
-    params,
-    message = `Invalid parameter for ${command}`,
-  ) {
-    console.log('Parameter error: %o, Params: %o', command, params);
-
-    await this.#connection.write(ResponseCode.PARAM_ERR, message);
-  }
-
   /**
    * @param {string} command
    * @param {string} params
@@ -199,6 +200,16 @@ export class SmtpSession {
       ResponseCode.NOT_IMPLEMENTED,
       `Command not implemented`,
     );
+  }
+
+  async #handleParamError(
+    command,
+    params,
+    message = `Invalid parameter for ${command}`,
+  ) {
+    console.log('Parameter error: %o, Params: %o', command, params);
+
+    await this.#connection.write(ResponseCode.PARAM_ERR, message);
   }
 
   /**
@@ -218,15 +229,43 @@ export class SmtpSession {
     return greeting;
   }
 
-  #loadNewState() {
-    this.#state = new SessionState();
+  /**
+   * @param {string} from
+   */
+  #startTransaction(from) {
+    this.#trx = new SessionTransaction(from);
 
-    console.log('New state created');
+    console.log('Transaction started');
+  }
+
+  #abortTransaction() {
+    if (this.#trx === null) {
+      return;
+    }
+
+    this.#trx = null;
+
+    console.log('Transaction aborted');
   }
 
   #enabledExtendedMode() {
-    this.#state.isExtended = true;
+    this.#isExtended = true;
 
     console.log('Extended mode enabled');
+  }
+
+  #initialize() {
+    if (this.#isInitialized) {
+      this.#isExtended = false;
+      this.#abortTransaction();
+
+      console.log('Session re-initialized');
+
+      return;
+    }
+
+    this.#isInitialized = true;
+
+    console.log('Session initialized');
   }
 }
