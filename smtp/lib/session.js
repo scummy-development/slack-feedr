@@ -1,17 +1,29 @@
 import * as config from './config.js';
 import { DefaultResponse, ResponseCode, SmtpCommand } from './constants.js';
 
-export const RE_MAIL_FROM = /^FROM: ?<([^>]+)>/i;
+export const RE_MAIL_PARAM = /^(\w+): ?<([^>]+)>/i;
 export const RE_LINE_COMMAND_AND_PARAMS = /^(\w+)(?:\s+(.*))?$/;
 
 class SessionTransaction {
   from;
 
   /**
+   * @type {string[]}
+   */
+  rcpt = [];
+
+  /**
    * @param {string} from
    */
   constructor(from) {
     this.from = from;
+  }
+
+  /**
+   * @param {string} rcpt
+   */
+  addRecipient(rcpt) {
+    this.rcpt.push(rcpt);
   }
 }
 
@@ -52,7 +64,7 @@ export class SmtpSession {
    */
   #writeResponse(code, ...messages) {
     if (!messages.length && DefaultResponse[code]) {
-      this.#connection.write(code, DefaultResponse[code]);
+      return this.#connection.write(code, DefaultResponse[code]);
     }
 
     return this.#connection.write(code, ...messages);
@@ -61,7 +73,7 @@ export class SmtpSession {
   /**
    * @param {string} line
    */
-  async #handleLine(line) {
+  #handleLine(line) {
     const [, commandStr, params] = line.match(RE_LINE_COMMAND_AND_PARAMS) ?? [];
 
     const command = commandStr.toUpperCase();
@@ -70,7 +82,7 @@ export class SmtpSession {
 
     const handler = this.#commands[command] ?? this.#handleNotImplemented;
 
-    await handler.call(this, params);
+    return handler.call(this, params);
   }
 
   /**
@@ -99,19 +111,43 @@ export class SmtpSession {
   }
 
   /**
-   * @param {string} params
+   * @param {string} paramsStr
    */
-  async #handleMail(params) {
+  async #handleMail(paramsStr) {
     if (this.#trx) {
       return this.#writeResponse(ResponseCode.BAD_SEQUENCE);
     }
 
-    const [, from] = params?.match(RE_MAIL_FROM) ?? [];
+    const [param1, ...rest] = paramsStr.split(' ');
+
+    console.log('Mail params: %o, parsed: %o', paramsStr, {
+      param1,
+      rest,
+    });
+
+    const [, param, from] = param1.match(RE_MAIL_PARAM) ?? [];
+
+    if (rest.length > 0) {
+      return this.#handleParamError(
+        SmtpCommand.MAIL,
+        paramsStr,
+        'Too many parameters',
+      );
+    }
+
+    if (param?.toUpperCase() !== 'FROM') {
+      return this.#handleParamError(
+        SmtpCommand.MAIL,
+        paramsStr,
+        'Unknown parameter',
+      );
+    }
 
     if (!from) {
-      return this.#writeResponse(
-        ResponseCode.PARAM_ERR,
-        'Parameter error - FROM address not found',
+      return this.#handleParamError(
+        SmtpCommand.MAIL,
+        paramsStr,
+        'FROM address not found',
       );
     }
 
@@ -215,7 +251,7 @@ export class SmtpSession {
   #handleParamError(
     command,
     params,
-    message = `Invalid parameter for ${command}`,
+    message = `Invalid parameters for ${command}`,
   ) {
     console.log('Parameter error: %o, Params: %o', command, params);
 
