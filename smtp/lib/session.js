@@ -1,5 +1,10 @@
 import * as config from './config.js';
-import { DefaultResponse, ResponseCode, SmtpCommand } from './constants.js';
+import {
+  DefaultResponse,
+  ResponseCode,
+  SmtpCommand,
+  SmtpParams,
+} from './constants.js';
 
 export const RE_MAIL_PARAM = /^(\w+): ?<([^>]+)>/i;
 export const RE_LINE_COMMAND_AND_PARAMS = /^(\w+)(?:\s+(.*))?$/;
@@ -111,6 +116,23 @@ export class SmtpSession {
   }
 
   /**
+   *
+   * @param {string} paramStr
+   * @returns {[string|null, string|null]}
+   */
+  #parseMailParam(paramStr) {
+    const match = paramStr.match(RE_MAIL_PARAM);
+
+    if (!match) {
+      return [null, null];
+    }
+
+    const [, paramName, paramValue] = match;
+
+    return [paramName.toUpperCase(), paramValue];
+  }
+
+  /**
    * @param {string} paramsStr
    */
   async #handleMail(paramsStr) {
@@ -125,8 +147,6 @@ export class SmtpSession {
       rest,
     });
 
-    const [, param, from] = param1.match(RE_MAIL_PARAM) ?? [];
-
     if (rest.length > 0) {
       return this.#handleParamError(
         SmtpCommand.MAIL,
@@ -135,7 +155,9 @@ export class SmtpSession {
       );
     }
 
-    if (param?.toUpperCase() !== 'FROM') {
+    const [param, from] = this.#parseMailParam(param1);
+
+    if (param !== SmtpParams.FROM) {
       return this.#handleParamError(
         SmtpCommand.MAIL,
         paramsStr,

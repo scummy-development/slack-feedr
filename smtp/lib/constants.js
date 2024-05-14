@@ -13,6 +13,11 @@ export const SmtpCommand = Object.freeze({
   VRFY: 'VRFY',
 });
 
+export const SmtpParams = Object.freeze({
+  FROM: 'FROM',
+  TO: 'TO',
+});
+
 export const ResponseCode = Object.freeze({
   HELP: 214,
   READY: 220,
