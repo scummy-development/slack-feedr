@@ -5,39 +5,28 @@ import {
   SmtpCommand,
   SmtpParams,
 } from './constants.js';
+import {
+  BadSequenceException,
+  NotImplementedException,
+  ParamsException,
+  SmtpException,
+} from './exceptions.js';
+import { SmtpTransaction } from './transaction.js';
 
 export const RE_MAIL_PARAM = /^(\w+): ?<([^>]+)>/i;
 export const RE_LINE_COMMAND_AND_PARAMS = /^(\w+)(?:\s+(.*))?$/;
 
-class SessionTransaction {
-  from;
-
-  /**
-   * @type {string[]}
-   */
-  rcpt = [];
-
-  /**
-   * @param {string} from
-   */
-  constructor(from) {
-    this.from = from;
-  }
-
-  /**
-   * @param {string} rcpt
-   */
-  addRecipient(rcpt) {
-    this.rcpt.push(rcpt);
-  }
-}
-
 export class SmtpSession {
   #connection;
+
+  /** @type {SmtpTransaction|null} */
   #trx = null;
+
   #isInitialized = false;
+
   #isExtended = false;
 
+  /** @type {Record<keyof SmtpCommand, (params: string) => void | Promise<void>} */
   #commands = {
     [SmtpCommand.EHLO]: this.#handleEhlo,
     [SmtpCommand.HELO]: this.#handleHelo,
@@ -76,208 +65,63 @@ export class SmtpSession {
   }
 
   /**
+   * @param {SmtpException|Error} e
+   */
+  #handleCommandException(e) {
+    console.error(e);
+
+    if (e instanceof SmtpException) {
+      return this.#writeResponse(e.responseCode, e.message);
+    }
+
+    return this.#writeResponse(ResponseCode.UNRECOGNIZED, e.message);
+  }
+
+  /**
    * @param {string} line
    */
   #handleLine(line) {
     const [, commandStr, params] = line.match(RE_LINE_COMMAND_AND_PARAMS) ?? [];
 
+    /** @type {keyof SmtpCommand} */
     const command = commandStr.toUpperCase();
 
-    console.log('Handling command: %o, Params: %o', command, params);
+    const handler = this.#commands[command];
 
-    const handler = this.#commands[command] ?? this.#handleNotImplemented;
+    try {
+      if (!handler) {
+        throw new NotImplementedException('Command not recognized');
+      }
 
-    return handler.call(this, params);
+      console.log('Handling command: %o, Params: %o', command, params);
+
+      return handler.call(this, params);
+    } catch (e) {
+      return this.#handleCommandException(e);
+    }
   }
 
-  /**
-   * @param {string} params
-   */
-  #handleEhlo(params) {
-    this.#initialize();
-    this.#enabledExtendedMode();
+  #abortTransaction() {
+    this.#trx = null;
 
-    const extendedGreeting = this.#createExtendedGreeting(params);
-
-    return this.#writeResponse(ResponseCode.OK, extendedGreeting);
+    console.log('Transaction aborted');
   }
 
-  /**
-   * @param {string} params
-   */
-  #handleHelo(params) {
-    if (params) {
-      return this.#handleParamError(SmtpCommand.HELO, params);
+  #initialize() {
+    if (this.#trx !== null) {
+      this.#abortTransaction();
     }
 
-    this.#initialize();
+    this.#isExtended = false;
+    this.#isInitialized = true;
 
-    return this.#writeResponse(ResponseCode.OK, config.serverName);
+    console.log('Session initialized');
   }
 
-  /**
-   *
-   * @param {string} paramStr
-   * @returns {[string|null, string|null]}
-   */
-  #parseMailParam(paramStr) {
-    const match = paramStr.match(RE_MAIL_PARAM);
+  #enabledExtendedMode() {
+    this.#isExtended = true;
 
-    if (!match) {
-      return [null, null];
-    }
-
-    const [, paramName, paramValue] = match;
-
-    return [paramName.toUpperCase(), paramValue];
-  }
-
-  /**
-   * @param {string} paramsStr
-   */
-  async #handleMail(paramsStr) {
-    if (this.#trx) {
-      return this.#writeResponse(ResponseCode.BAD_SEQUENCE);
-    }
-
-    const [param1, ...rest] = paramsStr.split(' ');
-
-    console.log('Mail params: %o, parsed: %o', paramsStr, {
-      param1,
-      rest,
-    });
-
-    if (rest.length > 0) {
-      return this.#handleParamError(
-        SmtpCommand.MAIL,
-        paramsStr,
-        'Too many parameters',
-      );
-    }
-
-    const [param, from] = this.#parseMailParam(param1);
-
-    if (param !== SmtpParams.FROM) {
-      return this.#handleParamError(
-        SmtpCommand.MAIL,
-        paramsStr,
-        'Unknown parameter',
-      );
-    }
-
-    if (!from) {
-      return this.#handleParamError(
-        SmtpCommand.MAIL,
-        paramsStr,
-        'FROM address not found',
-      );
-    }
-
-    console.log('Mail from: %o', from);
-
-    await this.#startTransaction(from);
-
-    return this.#writeResponse(ResponseCode.OK);
-  }
-
-  /**
-   * @param {string} params
-   * @todo Implement command
-   */
-  #handleRcpt(params) {
-    return this.#handleNotImplemented(SmtpCommand.RCPT, params);
-  }
-
-  /**
-   * @param {string} params
-   * @todo Implement command
-   */
-  #handleData(params) {
-    return this.#handleNotImplemented(SmtpCommand.DATA, params);
-  }
-
-  /**
-   * @param {string} params
-   */
-  async #handleRset(params) {
-    if (params) {
-      return this.#handleParamError(SmtpCommand.RSET, params);
-    }
-
-    await this.#abortTransaction();
-
-    return this.#writeResponse(ResponseCode.OK);
-  }
-
-  /**
-   * @param {string} params
-   */
-  #handleNoop(params) {
-    if (params) {
-      return this.#handleParamError(SmtpCommand.NOOP, params);
-    }
-
-    return this.#writeResponse(ResponseCode.OK);
-  }
-
-  /**
-   * @param {string} params
-   */
-  async #handleQuit(params) {
-    if (params) {
-      return this.#handleParamError(SmtpCommand.QUIT, params);
-    }
-
-    await this.#writeResponse(ResponseCode.CLOSING);
-
-    return this.#connection.end();
-  }
-
-  /**
-   * @param {string} params
-   * @todo Implement command
-   */
-  #handleVrfy(params) {
-    return this.#handleNotImplemented(SmtpCommand.VRFY, params);
-  }
-
-  /**
-   * @param {string} params
-   */
-  #handleHelp(params) {
-    if (params) {
-      return this.#handleParamError(SmtpCommand.HELP, params);
-    }
-
-    return this.#writeResponse(
-      ResponseCode.HELP,
-      `Commands: ${Object.keys(this.#commands).join(' ')}`,
-    );
-  }
-
-  /**
-   * @param {string} command
-   * @param {string} params
-   */
-  #handleNotImplemented(command, params) {
-    console.log('Command not implemented: %o, Params: %o', command, params);
-
-    return this.#writeResponse(ResponseCode.NOT_IMPLEMENTED);
-  }
-
-  /**
-   * @param {SmtpCommand[keyof SmtpCommand]} command
-   * @param {string} params
-   * @param {string} message
-   */
-  #handleParamError(
-    command,
-    params,
-    message = `Invalid parameters for ${command}`,
-  ) {
-    console.log('Parameter error: %o, Params: %o', command, params);
-
-    return this.#writeResponse(ResponseCode.PARAM_ERR, message);
+    console.log('Extended mode enabled');
   }
 
   /**
@@ -298,34 +142,194 @@ export class SmtpSession {
   }
 
   /**
+   * @param {string} params
+   */
+  #handleEhlo(params) {
+    this.#initialize();
+    this.#enabledExtendedMode();
+
+    const extendedGreeting = this.#createExtendedGreeting(params);
+
+    return this.#writeResponse(ResponseCode.OK, extendedGreeting);
+  }
+
+  /**
+   * @param {string} params
+   */
+  #handleHelo(params) {
+    if (params) {
+      throw new ParamsException('HELO command does not accept parameters');
+    }
+
+    this.#initialize();
+
+    return this.#writeResponse(ResponseCode.OK, config.serverName);
+  }
+
+  /**
+   * @param {string} paramStr
+   * @returns {[string|null, string|null]}
+   */
+  #parseMailParam(paramStr) {
+    const match = paramStr.match(RE_MAIL_PARAM);
+
+    if (!match) {
+      return [null, null];
+    }
+
+    const [, paramName, paramValue] = match;
+
+    return [paramName.toUpperCase(), paramValue];
+  }
+
+  /**
    * @param {string} from
    */
   #startTransaction(from) {
-    this.#trx = new SessionTransaction(from);
+    this.#trx = new SmtpTransaction(from);
 
     console.log('Transaction started');
   }
 
-  #abortTransaction() {
-    this.#trx = null;
-
-    console.log('Transaction aborted');
-  }
-
-  #enabledExtendedMode() {
-    this.#isExtended = true;
-
-    console.log('Extended mode enabled');
-  }
-
-  #initialize() {
-    if (this.#trx !== null) {
-      this.#abortTransaction();
+  /**
+   * @param {string} paramsStr
+   */
+  async #handleMail(paramsStr) {
+    if (!this.#isInitialized) {
+      throw new BadSequenceException('Session not initialized');
     }
 
-    this.#isExtended = false;
-    this.#isInitialized = true;
+    if (this.#trx) {
+      throw new BadSequenceException('Transaction already started');
+    }
 
-    console.log('Session initialized');
+    const [param1, ...rest] = paramsStr.split(' ');
+
+    console.log('Mail params: %o, parsed: %o', paramsStr, {
+      param1,
+      rest,
+    });
+
+    if (rest.length > 0) {
+      throw new ParamsException('Too many parameters');
+    }
+
+    const [param, from] = this.#parseMailParam(param1);
+
+    if (param !== SmtpParams.FROM) {
+      throw new ParamsException('Unknown parameter');
+    }
+
+    if (!from) {
+      throw new ParamsException('FROM address not found');
+    }
+
+    console.log('Mail from: %o', from);
+
+    await this.#startTransaction(from);
+
+    return this.#writeResponse(ResponseCode.OK);
+  }
+
+  /**
+   * @param {string} params
+   */
+  #handleRcpt(params) {
+    if (!this.#trx) {
+      throw new BadSequenceException('Transaction not started');
+    }
+
+    const [param1, ...rest] = params.split(' ');
+
+    if (rest.length > 0) {
+      throw new ParamsException('Too many parameters');
+    }
+
+    const [param, rcpt] = this.#parseMailParam(param1);
+
+    if (param !== SmtpParams.TO) {
+      throw new ParamsException('Unknown parameter');
+    }
+
+    if (!rcpt) {
+      throw new ParamsException('TO address not found');
+    }
+
+    this.#trx.addRecipient(rcpt);
+
+    console.log('Rcpt trx: %o', this.#trx);
+
+    return this.#writeResponse(ResponseCode.OK);
+  }
+
+  /**
+   * @param {string} params
+   * @todo Implement command
+   */
+  #handleData(params) {
+    console.log('DATA params: %o', params);
+
+    throw new NotImplementedException('DATA command not implemented');
+  }
+
+  /**
+   * @param {string} params
+   */
+  async #handleRset(params) {
+    if (params) {
+      throw new ParamsException('RSET command does not accept parameters');
+    }
+
+    await this.#abortTransaction();
+
+    return this.#writeResponse(ResponseCode.OK);
+  }
+
+  /**
+   * @param {string} params
+   */
+  #handleNoop(params) {
+    if (params) {
+      throw new ParamsException('NOOP command does not accept parameters');
+    }
+
+    return this.#writeResponse(ResponseCode.OK);
+  }
+
+  /**
+   * @param {string} params
+   */
+  async #handleQuit(params) {
+    if (params) {
+      throw new ParamsException('QUIT command does not accept parameters');
+    }
+
+    await this.#writeResponse(ResponseCode.CLOSING);
+
+    return this.#connection.end();
+  }
+
+  /**
+   * @param {string} params
+   * @todo Implement command
+   */
+  #handleVrfy(params) {
+    console.log('VRFY params: %o', params);
+
+    throw new NotImplementedException('VRFY command not implemented');
+  }
+
+  /**
+   * @param {string} params
+   */
+  #handleHelp(params) {
+    if (params) {
+      throw new ParamsException('HELP command does not accept parameters');
+    }
+
+    return this.#writeResponse(
+      ResponseCode.HELP,
+      `Commands: ${Object.keys(this.#commands).join(' ')}`,
+    );
   }
 }
