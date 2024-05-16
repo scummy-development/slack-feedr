@@ -81,14 +81,15 @@ export class SmtpSession {
    * @param {string} line
    */
   #handleLine(line) {
-    const [, commandStr, params] = line.match(RE_LINE_COMMAND_AND_PARAMS) ?? [];
-
-    /** @type {keyof SmtpCommand} */
-    const command = commandStr.toUpperCase();
-
-    const handler = this.#commands[command];
-
     try {
+      const [, commandStr, params] =
+        line.match(RE_LINE_COMMAND_AND_PARAMS) ?? [];
+
+      /** @type {keyof SmtpCommand} */
+      const command = commandStr.toUpperCase();
+
+      const handler = this.#commands[command];
+
       if (!handler) {
         throw new NotImplementedException('Command not recognized');
       }
@@ -148,9 +149,10 @@ export class SmtpSession {
     this.#initialize();
     this.#enabledExtendedMode();
 
-    const extendedGreeting = this.#createExtendedGreeting(params);
-
-    return this.#writeResponse(ResponseCode.OK, extendedGreeting);
+    return this.#writeResponse(
+      ResponseCode.OK,
+      this.#createExtendedGreeting(params),
+    );
   }
 
   /**
