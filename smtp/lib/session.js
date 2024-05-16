@@ -1,5 +1,6 @@
 import * as config from './config.js';
 import {
+  CRLF,
   DefaultResponse,
   ResponseCode,
   SmtpCommand,
@@ -11,19 +12,27 @@ import {
   ParamsException,
   SmtpException,
 } from './exceptions.js';
+import { createPromiseWithResolvers } from './promise.js';
 import { SmtpTransaction } from './transaction.js';
 
 export const RE_MAIL_PARAM = /^(\w+): ?<([^>]+)>/i;
 export const RE_LINE_COMMAND_AND_PARAMS = /^(\w+)(?:\s+(.*))?$/;
+export const END_OF_DATA = CRLF + '.' + CRLF;
+
+const SessionMode = Object.freeze({
+  UNINITIALIZED: 0,
+  COMMAND: 1,
+  DATA: 2,
+});
 
 export class SmtpSession {
   #connection;
-
+  /** @type {SessionMode[keyof SessionMode]} */
+  #mode = SessionMode.UNINITIALIZED;
   /** @type {SmtpTransaction|null} */
   #trx = null;
-
-  #isInitialized = false;
-
+  #data = createPromiseWithResolvers();
+  #dataBuffer = '';
   #isExtended = false;
 
   /** @type {Record<keyof SmtpCommand, (params: string) => void | Promise<void>} */
@@ -67,7 +76,7 @@ export class SmtpSession {
   /**
    * @param {SmtpException|Error} e
    */
-  #handleCommandException(e) {
+  #handleException(e) {
     console.error(e);
 
     if (e instanceof SmtpException) {
@@ -80,26 +89,87 @@ export class SmtpSession {
   /**
    * @param {string} line
    */
-  #handleLine(line) {
-    try {
-      const [, commandStr, params] =
-        line.match(RE_LINE_COMMAND_AND_PARAMS) ?? [];
+  #handleDataLine(line) {
+    this.#dataBuffer += line + CRLF;
 
-      /** @type {keyof SmtpCommand} */
-      const command = commandStr.toUpperCase();
+    if (this.#dataBuffer.endsWith(END_OF_DATA)) {
+      this.#mode = SessionMode.COMMAND;
+      const dataString = this.#dataBuffer.slice(0, -END_OF_DATA.length);
+      this.#dataBuffer = [];
 
-      const handler = this.#commands[command];
-
-      if (!handler) {
-        throw new NotImplementedException('Command not recognized');
-      }
-
-      console.log('Handling command: %o, Params: %o', command, params);
-
-      return handler.call(this, params);
-    } catch (e) {
-      return this.#handleCommandException(e);
+      this.#data.resolve(dataString);
     }
+  }
+
+  /**
+   * @param {string} line
+   */
+  async #handleCommandLine(line) {
+    const [, commandStr, params] = line.match(RE_LINE_COMMAND_AND_PARAMS) ?? [];
+
+    /** @type {keyof SmtpCommand} */
+    const command = commandStr.toUpperCase();
+    const handler = this.#commands[command];
+
+    if (!handler) {
+      throw new NotImplementedException('Command not recognized');
+    }
+
+    console.log('Handling command: %o, Params: %o', command, params);
+
+    await handler.call(this, params);
+  }
+
+  /**
+   * @param {string} line
+   */
+  async #handleLine(line) {
+    try {
+      if (this.#mode === SessionMode.DATA) {
+        await this.#handleDataLine(line);
+      } else {
+        await this.#handleCommandLine(line);
+      }
+    } catch (e) {
+      await this.#handleException(e);
+    }
+  }
+
+  async #captureData() {
+    this.#mode = SessionMode.DATA;
+    this.#data = createPromiseWithResolvers();
+
+    const data = await this.#data.promise;
+    this.#mode = SessionMode.COMMAND;
+
+    return data;
+  }
+
+  /**
+   * @param {string} params
+   */
+  async #handleData(params) {
+    console.log('DATA params: %o', params);
+
+    // 1. Check if transaction is started
+    if (!this.#trx) {
+      throw new BadSequenceException('Transaction not started');
+    }
+
+    // 2. Check if recipients are added
+    if (this.#trx.to.length === 0) {
+      throw new BadSequenceException('No recipients added');
+    }
+
+    const data = await this.#captureData();
+
+    // 5. Add message to transaction
+    this.#trx.addData(data);
+
+    // 6. Log transaction
+    console.log('Transaction: %s', this.#trx);
+
+    throw new NotImplementedException('DATA command not implemented');
   }
 
   #abortTransaction() {
@@ -114,7 +184,7 @@ export class SmtpSession {
     }
 
     this.#isExtended = false;
-    this.#isInitialized = true;
+    this.#mode = SessionMode.COMMAND;
 
     console.log('Session initialized');
   }
@@ -197,7 +267,7 @@ export class SmtpSession {
    * @param {string} paramsStr
    */
   async #handleMail(paramsStr) {
-    if (!this.#isInitialized) {
+    if (this.#mode === null) {
       throw new BadSequenceException('Session not initialized');
     }
 
@@ -259,19 +329,9 @@ export class SmtpSession {
 
     this.#trx.addRecipient(rcpt);
 
-    console.log('Rcpt trx: %o', this.#trx);
+    console.log('Rcpt trx: %s', this.#trx);
 
     return this.#writeResponse(ResponseCode.OK);
-  }
-
-  /**
-   * @param {string} params
-   * @todo Implement command
-   */
-  #handleData(params) {
-    console.log('DATA params: %o', params);
-
-    throw new NotImplementedException('DATA command not implemented');
   }
 
   /**
