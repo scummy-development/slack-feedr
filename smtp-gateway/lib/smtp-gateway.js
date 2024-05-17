@@ -1,13 +1,21 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import EventEmitter from 'events';
-import * as net from 'net';
-import { SmtpConnection } from './connection.js';
+import { Server, Socket } from 'net';
+import { SmtpGatewayEvents } from './constants.js';
+import { SmtpConnection } from './smtp-connection.js';
+
+const eventValues = Object.values(SmtpGatewayEvents);
 
 export class SmtpGateway extends EventEmitter {
-  #server = new net.Server();
+  serverName;
+
+  #server = new Server();
   #connections = new WeakMap();
 
-  constructor() {
+  constructor(serverName = 'localhost') {
     super();
+
+    this.serverName = serverName;
 
     this.#server.on('close', this.#handleClose.bind(this));
     this.#server.on('connection', this.#handleConnection.bind(this));
@@ -16,29 +24,35 @@ export class SmtpGateway extends EventEmitter {
     this.#server.on('drop', this.#handleDrop.bind(this));
   }
 
-  /**
-   * @param {number} port
-   */
+  /** @param {number} port */
   async listen(port) {
     this.#server.listen(port);
+  }
+
+  /**
+   * @param {SmtpGatewayEvents[keyof SmtpGatewayEvents]} event
+   * @param  {...any} args
+   */
+  async emit(event, ...args) {
+    event = event.toLowerCase();
+
+    if (!eventValues.includes(event)) {
+      throw new Error(`Unknown ${this.constructor.name} event: ${event}`);
+    }
+
+    super.emit(event, ...args);
   }
 
   #handleClose() {
     console.log('Server closed');
   }
 
-  /**
-   * @param {net.Socket} socket
-   */
+  /** @param {Socket} socket */
   #handleConnection(socket) {
-    console.log('Connection established', socket.address());
-
     this.#connections.set(socket, new SmtpConnection(socket, this));
   }
 
-  /**
-   * @param {Error} err
-   */
+  /** @param {Error} err */
   #handleError(err) {
     console.error(err);
   }
@@ -47,9 +61,7 @@ export class SmtpGateway extends EventEmitter {
     console.log(`SMTP listening on port %d`, this.#server.address().port);
   }
 
-  /**
-   * @param {net.DropArgument|undefined} data
-   */
+  /** @param {net.DropArgument|undefined} data */
   #handleDrop(data) {
     console.log('Connection dropped', data);
   }

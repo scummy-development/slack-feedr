@@ -3,16 +3,12 @@ import { v4 } from 'uuid';
 export class SmtpTransaction {
   id;
   from;
-
   /** @type {string[]} */
   to = [];
-
   /** @type {string|null} */
   data = null;
 
-  /**
-   * @param {string} from
-   */
+  /** @param {string} from */
   constructor(from) {
     this.id = v4();
     this.from = from;
@@ -20,18 +16,14 @@ export class SmtpTransaction {
     console.log('Transaction %o created with FROM=%o', this.id, from);
   }
 
-  /**
-   * @param {string} rcpt
-   */
+  /** @param {string} rcpt */
   addRecipient(rcpt) {
     this.to.push(rcpt);
 
     console.log('Recipient %o added to transaction %o', rcpt, this.id);
   }
 
-  /**
-   * @param {string} data
-   */
+  /** @param {string} data */
   setData(data) {
     this.data = data;
 

@@ -1,20 +1,20 @@
-import * as config from './config.js';
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { v4 } from 'uuid';
 import {
   CRLF,
-  DefaultResponse,
+  CommonResponse as CommonResponse,
   ResponseCode,
   SessionMode,
   SmtpCommand,
   SmtpParams,
 } from './constants.js';
+import { createPromiseWithResolvers } from './helpers.js';
 import {
   BadSequenceException,
   NotImplementedException,
   ParamsException,
   SmtpException,
-} from './exceptions.js';
-import { createPromiseWithResolvers } from './promise.js';
-import { store } from './store.js';
+} from './smtp-exception.js';
 import { SmtpTransaction } from './transaction.js';
 
 export const RE_MAIL_PARAM = /^(\w+): ?<([^>]+)>/i;
@@ -22,7 +22,10 @@ export const RE_LINE_COMMAND_AND_PARAMS = /^(\w+)(?:\s+(.*))?$/;
 export const END_OF_DATA = CRLF + '.' + CRLF;
 
 export class SmtpSession {
+  id;
+
   #connection;
+  #gateway;
   /** @type {SessionMode[keyof SessionMode]} */
   #mode = SessionMode.UNINITIALIZED;
   /** @type {SmtpTransaction|null} */
@@ -47,14 +50,32 @@ export class SmtpSession {
 
   /**
    * @param {SmtpConnection} connection
+   * @param {import('./smtp-gateway.js').SmtpGateway} gateway
    **/
-  constructor(connection) {
+  constructor(connection, gateway) {
+    this.id = v4();
     this.#connection = connection;
+    this.#gateway = gateway;
+
     this.#connection.on('line', this.#handleLine.bind(this));
   }
 
   sendReady() {
+    console.log(
+      `Session %o ready for %o`,
+      this.id,
+      this.#connection.remoteAddress,
+    );
     return this.#writeResponse(ResponseCode.READY);
+  }
+
+  /** @param {ResponseCode[keyof ResponseCode]} code  */
+  #getResponse(code) {
+    if (code === ResponseCode.READY) {
+      return `${this.#gateway.serverName} ${CommonResponse[ResponseCode.READY]}`;
+    }
+
+    return CommonResponse[code];
   }
 
   /**
@@ -62,16 +83,14 @@ export class SmtpSession {
    * @param  {...string} messages
    */
   #writeResponse(code, ...messages) {
-    if (!messages.length && DefaultResponse[code]) {
-      return this.#connection.write(code, DefaultResponse[code]);
+    if (!messages.length) {
+      return this.#connection.write(code, this.#getResponse(code));
     }
 
     return this.#connection.write(code, ...messages);
   }
 
-  /**
-   * @param {SmtpException|Error} e
-   */
+  /** @param {SmtpException|Error} e */
   #handleException(e) {
     console.error(e);
 
@@ -82,9 +101,7 @@ export class SmtpSession {
     return this.#writeResponse(ResponseCode.UNRECOGNIZED, e.message);
   }
 
-  /**
-   * @param {string} line
-   */
+  /** @param {string} line */
   #handleDataLine(line) {
     if (line === '.') {
       this.#mode = SessionMode.COMMAND;
@@ -95,9 +112,7 @@ export class SmtpSession {
     }
   }
 
-  /**
-   * @param {string} line
-   */
+  /** @param {string} line */
   async #handleCommandLine(line) {
     const [, commandStr, params] = line.match(RE_LINE_COMMAND_AND_PARAMS) ?? [];
 
@@ -114,9 +129,7 @@ export class SmtpSession {
     await handler.call(this, params);
   }
 
-  /**
-   * @param {string} line
-   */
+  /** @param {string} line */
   async #handleLine(line) {
     try {
       if (this.#mode === SessionMode.DATA) {
@@ -152,11 +165,9 @@ export class SmtpSession {
     console.log('Extended mode enabled');
   }
 
-  /**
-   * @param {string} params
-   */
+  /** @param {string} params */
   #createExtendedGreeting(params) {
-    let greeting = config.serverName;
+    let greeting = this.#gateway.serverName;
 
     if (params) {
       const [clientName] = params.split(' ', 1);
@@ -169,9 +180,7 @@ export class SmtpSession {
     return greeting;
   }
 
-  /**
-   * @param {string} params
-   */
+  /** @param {string} params */
   #handleEhlo(params) {
     this.#initialize();
     this.#enabledExtendedMode();
@@ -182,9 +191,7 @@ export class SmtpSession {
     );
   }
 
-  /**
-   * @param {string} params
-   */
+  /** @param {string} params */
   #handleHelo(params) {
     if (params) {
       throw new ParamsException('HELO command does not accept parameters');
@@ -192,7 +199,7 @@ export class SmtpSession {
 
     this.#initialize();
 
-    return this.#writeResponse(ResponseCode.OK, config.serverName);
+    return this.#writeResponse(ResponseCode.OK, this.#gateway.serverName);
   }
 
   /**
@@ -211,18 +218,14 @@ export class SmtpSession {
     return [paramName.toUpperCase(), paramValue];
   }
 
-  /**
-   * @param {string} from
-   */
+  /** @param {string} from */
   #startTransaction(from) {
     this.#trx = new SmtpTransaction(from);
 
     console.log('Transaction started');
   }
 
-  /**
-   * @param {string} paramsStr
-   */
+  /** @param {string} paramsStr */
   #handleMail(paramsStr) {
     if (this.#mode === null) {
       throw new BadSequenceException('Session not initialized');
@@ -255,9 +258,7 @@ export class SmtpSession {
     return this.#writeResponse(ResponseCode.OK);
   }
 
-  /**
-   * @param {string} params
-   */
+  /** @param {string} params */
   #handleRcpt(params) {
     if (!this.#trx) {
       throw new BadSequenceException('Transaction not started');
@@ -296,9 +297,7 @@ export class SmtpSession {
     return data;
   }
 
-  /**
-   * @param {string} params
-   */
+  /** @param {string} params */
   async #handleData(params) {
     if (params) {
       throw new ParamsException('DATA command does not accept parameters');
@@ -316,16 +315,14 @@ export class SmtpSession {
 
     this.#trx.setData(data);
 
-    store.add(this.#trx);
+    this.#gateway.emit('data', this.#trx);
 
     this.#trx = null;
 
     return this.#writeResponse(ResponseCode.OK);
   }
 
-  /**
-   * @param {string} params
-   */
+  /** @param {string} params */
   #handleRset(params) {
     if (params) {
       throw new ParamsException('RSET command does not accept parameters');
@@ -336,9 +333,7 @@ export class SmtpSession {
     return this.#writeResponse(ResponseCode.OK);
   }
 
-  /**
-   * @param {string} params
-   */
+  /** @param {string} params */
   #handleNoop(params) {
     if (params) {
       throw new ParamsException('NOOP command does not accept parameters');
@@ -347,9 +342,7 @@ export class SmtpSession {
     return this.#writeResponse(ResponseCode.OK);
   }
 
-  /**
-   * @param {string} params
-   */
+  /** @param {string} params */
   async #handleQuit(params) {
     if (params) {
       throw new ParamsException('QUIT command does not accept parameters');
@@ -372,9 +365,7 @@ export class SmtpSession {
     throw new NotImplementedException('VRFY command not implemented');
   }
 
-  /**
-   * @param {string} params
-   */
+  /** @param {string} params */
   #handleHelp(params) {
     if (params) {
       throw new ParamsException('HELP command does not accept parameters');

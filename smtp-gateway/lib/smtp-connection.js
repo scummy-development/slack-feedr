@@ -1,8 +1,14 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import EventEmitter from 'events';
+import { Socket } from 'net';
+import { v4 } from 'uuid';
 import { CRLF } from './constants.js';
-import { SmtpSession } from './session.js';
+import { SmtpSession } from './smtp-session.js';
 
 export class SmtpConnection extends EventEmitter {
+  id;
+  remoteAddress;
+
   #socket;
   #buffer = '';
   #gateway;
@@ -15,12 +21,22 @@ export class SmtpConnection extends EventEmitter {
   constructor(socket, gateway) {
     super();
 
+    this.id = v4();
+    this.remoteAddress = socket.address().address;
+
     this.#socket = socket;
     this.#gateway = gateway;
-    this.#session = new SmtpSession(this);
+    this.#session = new SmtpSession(this, this.#gateway);
 
     this.#socket.on('data', this.#handleData.bind(this));
     this.#socket.on('end', this.#handleEnd.bind(this));
+    this.#socket.on('error', (err) => {
+      if (err.code === 'ECONNRESET') {
+        console.log('Connection reset for session %o', this.#session.id);
+      } else {
+        console.error(err);
+      }
+    });
 
     this.#session.sendReady();
   }

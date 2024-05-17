@@ -1,5 +1,3 @@
-import * as config from './config.js';
-
 export const SmtpCommand = Object.freeze({
   DATA: 'DATA',
   EHLO: 'EHLO',
@@ -35,13 +33,17 @@ export const ResponseCode = Object.freeze({
   BAD_SEQUENCE: 503,
 });
 
-export const DefaultResponse = Object.freeze({
-  [ResponseCode.READY]: `${config.serverName} Service ready`,
+export const CommonResponse = Object.freeze({
+  [ResponseCode.READY]: 'Service ready',
   [ResponseCode.CLOSING]: 'Closing connection',
   [ResponseCode.OK]: 'OK',
   [ResponseCode.UNRECOGNIZED]: 'Unrecognized command',
   [ResponseCode.NOT_IMPLEMENTED]: 'Command not implemented',
   [ResponseCode.BAD_SEQUENCE]: 'Bad sequence of commands',
+});
+
+export const SmtpGatewayEvents = Object.freeze({
+  DATA: 'data',
 });
 
 export const CRLF = '\r\n';

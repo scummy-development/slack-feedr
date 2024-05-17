@@ -1,7 +1,7 @@
 {
-  "name": "smtp",
+  "name": "feedr-smtp-gateway",
   "version": "1.0.0",
-  "main": "lib/main.js",
+  "main": "bin/main.js",
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
