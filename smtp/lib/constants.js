@@ -18,6 +18,12 @@ export const SmtpParams = Object.freeze({
   TO: 'TO',
 });
 
+export const SessionMode = Object.freeze({
+  UNINITIALIZED: 0,
+  COMMAND: 1,
+  DATA: 2,
+});
+
 export const ResponseCode = Object.freeze({
   HELP: 214,
   READY: 220,

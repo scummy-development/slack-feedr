@@ -3,6 +3,7 @@ import {
   CRLF,
   DefaultResponse,
   ResponseCode,
+  SessionMode,
   SmtpCommand,
   SmtpParams,
 } from './constants.js';
@@ -19,12 +20,6 @@ import { SmtpTransaction } from './transaction.js';
 export const RE_MAIL_PARAM = /^(\w+): ?<([^>]+)>/i;
 export const RE_LINE_COMMAND_AND_PARAMS = /^(\w+)(?:\s+(.*))?$/;
 export const END_OF_DATA = CRLF + '.' + CRLF;
-
-const SessionMode = Object.freeze({
-  UNINITIALIZED: 0,
-  COMMAND: 1,
-  DATA: 2,
-});
 
 export class SmtpSession {
   #connection;
@@ -239,11 +234,6 @@ export class SmtpSession {
 
     const [param1, ...rest] = paramsStr.split(' ');
 
-    console.log('Mail params: %o, parsed: %o', paramsStr, {
-      param1,
-      rest,
-    });
-
     if (rest.length > 0) {
       throw new ParamsException('Too many parameters');
     }
@@ -310,27 +300,24 @@ export class SmtpSession {
    * @param {string} params
    */
   async #handleData(params) {
-    console.log('DATA params: %o', params);
+    if (params) {
+      throw new ParamsException('DATA command does not accept parameters');
+    }
 
-    // 1. Check if transaction is started
     if (!this.#trx) {
       throw new BadSequenceException('Transaction not started');
     }
 
-    // 2. Check if recipients are added
     if (this.#trx.to.length === 0) {
       throw new BadSequenceException('No recipients added');
     }
 
     const data = await this.#captureData();
 
-    // 5. Add message to transaction
     this.#trx.addData(data);
 
-    // 6. Store transaction
     store.add(this.#trx);
 
-    // 7. Reset transaction
     this.#trx = null;
 
     return this.#writeResponse(ResponseCode.OK);
@@ -378,7 +365,9 @@ export class SmtpSession {
    * @todo Implement command
    */
   #handleVrfy(params) {
-    console.log('VRFY params: %o', params);
+    if (params) {
+      throw new ParamsException('VRFY command does not accept parameters');
+    }
 
     throw new NotImplementedException('VRFY command not implemented');
   }
