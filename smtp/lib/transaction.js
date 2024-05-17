@@ -16,6 +16,8 @@ export class SmtpTransaction {
   constructor(from) {
     this.id = v4();
     this.from = from;
+
+    console.log('Transaction %o created with FROM=%o', this.id, from);
   }
 
   /**
@@ -23,13 +25,17 @@ export class SmtpTransaction {
    */
   addRecipient(rcpt) {
     this.to.push(rcpt);
+
+    console.log('Recipient %o added to transaction %o', rcpt, this.id);
   }
 
   /**
    * @param {string} data
    */
-  addData(data) {
+  setData(data) {
     this.data = data;
+
+    console.log('Data %o set on transaction %o', data, this.id);
   }
 
   toString() {
