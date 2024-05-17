@@ -134,46 +134,6 @@ export class SmtpSession {
     }
   }
 
-  async #captureData() {
-    this.#mode = SessionMode.DATA;
-    this.#data = createPromiseWithResolvers();
-
-    const data = await this.#data.promise;
-    this.#mode = SessionMode.COMMAND;
-
-    return data;
-  }
-
-  /**
-   * @param {string} params
-   */
-  async #handleData(params) {
-    console.log('DATA params: %o', params);
-
-    // 1. Check if transaction is started
-    if (!this.#trx) {
-      throw new BadSequenceException('Transaction not started');
-    }
-
-    // 2. Check if recipients are added
-    if (this.#trx.to.length === 0) {
-      throw new BadSequenceException('No recipients added');
-    }
-
-    const data = await this.#captureData();
-
-    // 5. Add message to transaction
-    this.#trx.addData(data);
-
-    // 6. Store transaction
-    store.add(this.#trx);
-
-    // 7. Reset transaction
-    this.#trx = null;
-
-    return this.#writeResponse(ResponseCode.OK);
-  }
-
   #abortTransaction() {
     this.#trx = null;
 
@@ -332,6 +292,46 @@ export class SmtpSession {
     this.#trx.addRecipient(rcpt);
 
     console.log('Rcpt trx: %s', this.#trx);
+
+    return this.#writeResponse(ResponseCode.OK);
+  }
+
+  async #captureData() {
+    this.#mode = SessionMode.DATA;
+    this.#data = createPromiseWithResolvers();
+
+    const data = await this.#data.promise;
+    this.#mode = SessionMode.COMMAND;
+
+    return data;
+  }
+
+  /**
+   * @param {string} params
+   */
+  async #handleData(params) {
+    console.log('DATA params: %o', params);
+
+    // 1. Check if transaction is started
+    if (!this.#trx) {
+      throw new BadSequenceException('Transaction not started');
+    }
+
+    // 2. Check if recipients are added
+    if (this.#trx.to.length === 0) {
+      throw new BadSequenceException('No recipients added');
+    }
+
+    const data = await this.#captureData();
+
+    // 5. Add message to transaction
+    this.#trx.addData(data);
+
+    // 6. Store transaction
+    store.add(this.#trx);
+
+    // 7. Reset transaction
+    this.#trx = null;
 
     return this.#writeResponse(ResponseCode.OK);
   }
