@@ -37,13 +37,4 @@ export class SmtpTransaction {
 
     console.log('Data %o set on transaction %o', data, this.id);
   }
-
-  toString() {
-    return JSON.stringify({
-      id: this.id,
-      from: this.from,
-      to: this.to,
-      data: this.data,
-    });
-  }
 }

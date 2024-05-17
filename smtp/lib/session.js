@@ -314,7 +314,7 @@ export class SmtpSession {
 
     const data = await this.#captureData();
 
-    this.#trx.addData(data);
+    this.#trx.setData(data);
 
     store.add(this.#trx);
 
