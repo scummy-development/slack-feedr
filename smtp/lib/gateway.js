@@ -20,7 +20,7 @@ export class SmtpGateway extends EventEmitter {
    * @param {number} port
    */
   async listen(port) {
-    await this.#server.listen(port);
+    this.#server.listen(port);
   }
 
   #handleClose() {

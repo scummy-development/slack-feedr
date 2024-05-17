@@ -120,7 +120,7 @@ export class SmtpSession {
   async #handleLine(line) {
     try {
       if (this.#mode === SessionMode.DATA) {
-        await this.#handleDataLine(line);
+        this.#handleDataLine(line);
       } else {
         await this.#handleCommandLine(line);
       }
@@ -223,7 +223,7 @@ export class SmtpSession {
   /**
    * @param {string} paramsStr
    */
-  async #handleMail(paramsStr) {
+  #handleMail(paramsStr) {
     if (this.#mode === null) {
       throw new BadSequenceException('Session not initialized');
     }
@@ -250,7 +250,7 @@ export class SmtpSession {
 
     console.log('Mail from: %o', from);
 
-    await this.#startTransaction(from);
+    this.#startTransaction(from);
 
     return this.#writeResponse(ResponseCode.OK);
   }
@@ -326,12 +326,12 @@ export class SmtpSession {
   /**
    * @param {string} params
    */
-  async #handleRset(params) {
+  #handleRset(params) {
     if (params) {
       throw new ParamsException('RSET command does not accept parameters');
     }
 
-    await this.#abortTransaction();
+    this.#abortTransaction();
 
     return this.#writeResponse(ResponseCode.OK);
   }
