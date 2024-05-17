@@ -8,6 +8,7 @@
   },
   "license": "UNLICENSED",
   "dependencies": {
-    "@moser-inc/eslint-config": "^1.13.0"
+    "@moser-inc/eslint-config": "^1.13.0",
+    "uuid": "^9.0.1"
   }
 }

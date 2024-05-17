@@ -1,51 +1,43 @@
+import { v4 } from 'uuid';
+
 export class SmtpTransaction {
-  #from;
+  id;
+  from;
 
-  /**
-   * @type {string[]}
-   */
-  #to = [];
+  /** @type {string[]} */
+  to = [];
 
-  #data;
-
-  get from() {
-    return this.#from;
-  }
-
-  get to() {
-    return this.#to;
-  }
-
-  get data() {
-    return this.#data;
-  }
+  /** @type {string|null} */
+  data = null;
 
   /**
    * @param {string} from
    */
   constructor(from) {
-    this.#from = from;
+    this.id = v4();
+    this.from = from;
   }
 
   /**
    * @param {string} rcpt
    */
   addRecipient(rcpt) {
-    this.#to.push(rcpt);
+    this.to.push(rcpt);
   }
 
   /**
    * @param {string} data
    */
   addData(data) {
-    this.#data = data;
+    this.data = data;
   }
 
   toString() {
     return JSON.stringify({
-      from: this.#from,
-      to: this.#to,
-      data: this.#data,
+      id: this.id,
+      from: this.from,
+      to: this.to,
+      data: this.data,
     });
   }
 }

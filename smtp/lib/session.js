@@ -13,6 +13,7 @@ import {
   SmtpException,
 } from './exceptions.js';
 import { createPromiseWithResolvers } from './promise.js';
+import { store } from './store.js';
 import { SmtpTransaction } from './transaction.js';
 
 export const RE_MAIL_PARAM = /^(\w+): ?<([^>]+)>/i;
@@ -32,7 +33,7 @@ export class SmtpSession {
   /** @type {SmtpTransaction|null} */
   #trx = null;
   #data = createPromiseWithResolvers();
-  #dataBuffer = '';
+  #dataBuffer = [];
   #isExtended = false;
 
   /** @type {Record<keyof SmtpCommand, (params: string) => void | Promise<void>} */
@@ -90,14 +91,12 @@ export class SmtpSession {
    * @param {string} line
    */
   #handleDataLine(line) {
-    this.#dataBuffer += line + CRLF;
-
-    if (this.#dataBuffer.endsWith(END_OF_DATA)) {
+    if (line === '.') {
       this.#mode = SessionMode.COMMAND;
-      const dataString = this.#dataBuffer.slice(0, -END_OF_DATA.length);
+      this.#data.resolve(this.#dataBuffer.join(CRLF));
       this.#dataBuffer = [];
-
-      this.#data.resolve(dataString);
+    } else {
+      this.#dataBuffer.push(line.startsWith('.') ? line.slice(1) : line);
     }
   }
 
@@ -166,10 +165,13 @@ export class SmtpSession {
     // 5. Add message to transaction
     this.#trx.addData(data);
 
-    // 6. Log transaction
-    console.log('Transaction: %s', this.#trx);
+    // 6. Store transaction
+    store.add(this.#trx);
 
-    throw new NotImplementedException('DATA command not implemented');
+    // 7. Reset transaction
+    this.#trx = null;
+
+    return this.#writeResponse(ResponseCode.OK);
   }
 
   #abortTransaction() {

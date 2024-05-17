@@ -1,5 +1,10 @@
 import { SmtpGateway } from './gateway.js';
+import { store } from './store.js';
 
-const server = new SmtpGateway();
+store.on('TRANSACTION_ADDED', (transactionId) => {
+  const transaction = store.get(transactionId);
+  console.log('Transaction saved: %o', transaction);
+});
 
-await server.listen(2525);
+const gateway = new SmtpGateway();
+await gateway.listen(2525);

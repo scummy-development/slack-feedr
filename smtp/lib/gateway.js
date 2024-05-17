@@ -1,11 +1,14 @@
+import EventEmitter from 'events';
 import * as net from 'net';
 import { SmtpConnection } from './connection.js';
 
-export class SmtpGateway {
+export class SmtpGateway extends EventEmitter {
   #server = new net.Server();
   #connections = new WeakMap();
 
   constructor() {
+    super();
+
     this.#server.on('close', this.#handleClose.bind(this));
     this.#server.on('connection', this.#handleConnection.bind(this));
     this.#server.on('error', this.#handleError.bind(this));
