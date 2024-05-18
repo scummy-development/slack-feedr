@@ -15,7 +15,7 @@ import {
   ParamsException,
   SmtpException,
 } from './smtp-exception.js';
-import { SmtpTransaction } from './transaction.js';
+import { SmtpTransaction } from './smtp-transaction.js';
 
 export const RE_MAIL_PARAM = /^(\w+): ?<([^>]+)>/i;
 export const RE_LINE_COMMAND_AND_PARAMS = /^(\w+)(?:\s+(.*))?$/;
