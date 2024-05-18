@@ -1,10 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import { EventEmitter } from 'events';
 import { Socket } from 'net';
 import { v4 } from 'uuid';
 import { CRLF } from './constants.js';
 import { SmtpSession } from './smtp-session.js';
 
-export class SmtpConnection {
+export class SmtpConnection extends EventEmitter {
   id;
   remoteAddress;
 
@@ -18,6 +19,8 @@ export class SmtpConnection {
    * @param {SmtpGateway} gateway
    */
   constructor(socket, gateway) {
+    super();
+
     this.id = v4();
     this.remoteAddress = socket.address().address;
 
