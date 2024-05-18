@@ -15,7 +15,7 @@ export class SmtpConnection extends EventEmitter {
   #session;
 
   /**
-   * @param {net.Socket} socket
+   * @param {Socket} socket
    * @param {SmtpGateway} gateway
    */
   constructor(socket, gateway) {
