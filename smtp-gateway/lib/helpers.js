@@ -3,12 +3,12 @@
  * @returns {{ promise: Promise<T>, resolve: (val: T) => void, reject(reason: any) => void }}
  */
 export function createPromiseWithResolvers() {
-  const value = {};
+  const ret = {};
 
-  value.promise = new Promise((resolve, reject) => {
-    value.resolve = resolve;
-    value.reject = reject;
+  ret.promise = new Promise((resolve, reject) => {
+    ret.resolve = resolve;
+    ret.reject = reject;
   });
 
-  return value;
+  return ret;
 }

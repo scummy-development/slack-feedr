@@ -292,6 +292,7 @@ export class SmtpSession {
     this.#data = createPromiseWithResolvers();
 
     const data = await this.#data.promise;
+
     this.#mode = SessionMode.COMMAND;
 
     return data;
